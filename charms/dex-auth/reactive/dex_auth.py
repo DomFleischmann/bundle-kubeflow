@@ -50,6 +50,10 @@ def start_charm():
 
     layer.status.maintenance("configuring container")
 
+    if not hookenv.config('public-url'):
+        layer.status.blocked('Config option public-url is required.')
+        return False
+
     image_info = layer.docker_resource.get_info("oci-image")
 
     service_name = hookenv.service_name()
