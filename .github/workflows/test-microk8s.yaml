@@ -179,52 +179,53 @@ jobs:
       run: |
         set -eux
         juju scp -- -r $(pwd)/ ubuntu/0:~/
+        exit 1
 
-    - name: Install test dependencies
-      run: |
-        juju ssh ubuntu/0 <<EOF
-          set -eux
-          sudo snap install charm --classic
-          sudo snap install jq
-          sudo snap install juju --classic --channel ${{ matrix.juju }}
-          sudo snap install juju-helpers --classic --edge
-          sudo snap install juju-wait --classic
-          sudo snap install kubectl --classic
-          sudo snap install microk8s --classic --channel ${{ matrix.microk8s }}
-          sudo snap install yq
-          sudo apt update
-          sudo apt install -y libssl-dev firefox-geckodriver
-          sudo pip3 install pytest sh kfp requests pyyaml selenium
-          sudo usermod -a -G microk8s ubuntu
-        EOF
+    # - name: Install test dependencies
+    #   run: |
+    #     juju ssh ubuntu/0 <<EOF
+    #       set -eux
+    #       sudo snap install charm --classic
+    #       sudo snap install jq
+    #       sudo snap install juju --classic --channel ${{ matrix.juju }}
+    #       sudo snap install juju-helpers --classic --edge
+    #       sudo snap install juju-wait --classic
+    #       sudo snap install kubectl --classic
+    #       sudo snap install microk8s --classic --channel ${{ matrix.microk8s }}
+    #       sudo snap install yq
+    #       sudo apt update
+    #       sudo apt install -y libssl-dev firefox-geckodriver
+    #       sudo pip3 install pytest sh kfp requests pyyaml selenium
+    #       sudo usermod -a -G microk8s ubuntu
+    #     EOF
 
-    - name: Deploy Kubeflow
-      run: |
-        juju ssh ubuntu/0 <<EOF
-          set -eux
-          cd bundle-kubeflow
-          git clone git://git.launchpad.net/canonical-osm
-          cp -r canonical-osm/charms/interfaces/juju-relation-mysql mysql
-          python3 ./scripts/cli.py microk8s setup --test-mode
-          KUBEFLOW_AUTH_PASSWORD=foobar python3 ./scripts/cli.py --debug deploy-to uk8s --build --bundle ${{ matrix.bundle }}
-        EOF
+    # - name: Deploy Kubeflow
+    #   run: |
+    #     juju ssh ubuntu/0 <<EOF
+    #       set -eux
+    #       cd bundle-kubeflow
+    #       git clone git://git.launchpad.net/canonical-osm
+    #       cp -r canonical-osm/charms/interfaces/juju-relation-mysql mysql
+    #       python3 ./scripts/cli.py microk8s setup --test-mode
+    #       KUBEFLOW_AUTH_PASSWORD=foobar python3 ./scripts/cli.py --debug deploy-to uk8s --build --bundle ${{ matrix.bundle }}
+    #     EOF
 
-    - name: Test Kubeflow
-      run: |
-        juju ssh ubuntu/0 <<EOF
-          set -eux
-          cd bundle-kubeflow
+    # - name: Test Kubeflow
+    #   run: |
+    #     juju ssh ubuntu/0 <<EOF
+    #       set -eux
+    #       cd bundle-kubeflow
 
-          # https://bugs.launchpad.net/juju/+bug/1900915
-          # This seems to mostly work... :(
-          juju wait -wv
-          sleep 300
-          juju wait -wv
+    #       # https://bugs.launchpad.net/juju/+bug/1900915
+    #       # This seems to mostly work... :(
+    #       juju wait -wv
+    #       sleep 300
+    #       juju wait -wv
 
-          # The pods can sometimes stay in Pending for a little while longer,
-          # so run the tests first that don't check pod states.
-          ./tests/run.sh -m ${{ matrix.bundle }}
-        EOF
+    #       # The pods can sometimes stay in Pending for a little while longer,
+    #       # so run the tests first that don't check pod states.
+    #       ./tests/run.sh -m ${{ matrix.bundle }}
+    #     EOF
 
     - name: Juju status
       run: juju ssh ubuntu/0 sudo juju status
@@ -246,15 +247,21 @@ jobs:
       run: juju ssh ubuntu/0 sudo microk8s kubectl describe pods -A
       if: failure()
 
-    - name: Get selenium screenshot
-      run: juju scp ubuntu/0:/tmp/selenium.png selenium-${{ strategy.job-index }}.png
+    - name: Get selenium screenshots
+      run: |
+        set -ux
+        juju ssh ubuntu/0 'bash -c "touch /tmp/selenium-foo.png"'
+        juju ssh ubuntu/0 'bash -c "ls -lath /tmp/selenium-*.png"'
+        juju ssh ubuntu/0 'bash -c "tar -czvf selenium.tar.gz /tmp/selenium-*.png"'
+        juju ssh ubuntu/0 ls -lath bundle-kubeflow
+        juju scp ubuntu/0:selenium.tar.gz selenium-${{ strategy.job-index }}.tar.gz
       if: failure()
 
-    - name: Upload selenium screenshot
+    - name: Upload selenium screenshots
       uses: actions/upload-artifact@v2
       with:
         name: selenium-screenshots
-        path: selenium-${{ strategy.job-index }}.png
+        path: selenium-${{ strategy.job-index }}.tar.gz
       if: failure()
 
     - name: Generate inspect tarball
@@ -262,6 +269,7 @@ jobs:
         set -eux
         juju ssh ubuntu/0 <<EOF
           set -eux
+          ls -lath /tmp
           sudo microk8s inspect | \
             grep -Po "Report tarball is at \K.+" | \
             sudo xargs -I {} mv {} inspection-report-${{ strategy.job-index }}.tar.gz
